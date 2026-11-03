@@ -1,23 +1,36 @@
 package com.example.test1application.ui.screens
 
+import android.content.pm.PackageManager
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
+import com.example.test1application.R
 import com.example.test1application.model.TransactionNeedType
 import com.example.test1application.model.TransactionType
 import com.example.test1application.ui.viewmodel.ExpenseViewModel
+import com.example.test1application.ui.viewmodel.ScanUiState
+import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -26,12 +39,124 @@ fun AddTransactionScreen(
     onBack: () -> Unit
 ) {
     val categories by viewModel.categories.collectAsState()
+    val scanUiState by viewModel.scanUiState.collectAsState()
+    val context = LocalContext.current
 
     var title by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
     var selectedType by remember { mutableStateOf(TransactionType.EXPENSE) }
     var selectedNeedType by remember { mutableStateOf(TransactionNeedType.ESSENTIAL) }
-    var selectedCategoryId by remember { mutableStateOf(categories.firstOrNull()?.id ?: "") }
+    var selectedCategoryId by remember { mutableStateOf("") }
+
+    var tempCameraUri by remember { mutableStateOf<Uri?>(null) }
+    var showScanOptionsDialog by remember { mutableStateOf(false) }
+
+    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        if (success && tempCameraUri != null) {
+            viewModel.onImageSelected(context, tempCameraUri!!)
+        }
+    }
+
+    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) {
+            viewModel.onImageSelected(context, uri)
+        }
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
+        if (isGranted) {
+            val file = File(context.cacheDir, "receipt_${System.currentTimeMillis()}.jpg")
+            val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+            tempCameraUri = uri
+            cameraLauncher.launch(uri)
+        }
+    }
+
+    when (val state = scanUiState) {
+        is ScanUiState.Scanning -> {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    tonalElevation = 8.dp,
+                    modifier = Modifier.padding(32.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        CircularProgressIndicator()
+                        Text(text = stringResource(R.string.scanning_receipt), fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+        is ScanUiState.Error -> {
+            AlertDialog(
+                onDismissRequest = { viewModel.resetScan() },
+                title = { Text(stringResource(R.string.scan_error_title)) },
+                text = { Text(state.message) },
+                confirmButton = {
+                    TextButton(onClick = { viewModel.resetScan() }) {
+                        Text(stringResource(R.string.manual_entry))
+                    }
+                },
+                dismissButton = {
+                    Button(onClick = {
+                        viewModel.resetScan()
+                        showScanOptionsDialog = true
+                    }) {
+                        Text(stringResource(R.string.retry))
+                    }
+                }
+            )
+        }
+        is ScanUiState.Success -> {
+            LaunchedEffect(state) {
+                selectedType = TransactionType.EXPENSE
+                if (state.receipt.amount != null) {
+                    amount = state.receipt.amount.toString()
+                }
+                if (state.receipt.merchant != null) {
+                    title = state.receipt.merchant
+                }
+                viewModel.resetScan()
+            }
+        }
+        is ScanUiState.Idle -> {}
+    }
+
+    if (showScanOptionsDialog) {
+        AlertDialog(
+            onDismissRequest = { showScanOptionsDialog = false },
+            title = { Text(stringResource(R.string.scan_receipt)) },
+            text = { Text("Chọn phương thức quét hóa đơn") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showScanOptionsDialog = false
+                    galleryLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                }) {
+                    Text(stringResource(R.string.choose_from_gallery))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showScanOptionsDialog = false
+                    val permission = android.Manifest.permission.CAMERA
+                    if (ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED) {
+                        val file = File(context.cacheDir, "receipt_${System.currentTimeMillis()}.jpg")
+                        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+                        tempCameraUri = uri
+                        cameraLauncher.launch(uri)
+                    } else {
+                        permissionLauncher.launch(permission)
+                    }
+                }) {
+                    Text(stringResource(R.string.take_photo))
+                }
+            }
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -39,7 +164,7 @@ fun AddTransactionScreen(
                 title = { Text("Thêm giao dịch", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Quay lại")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Quay lại")
                     }
                 }
             )
@@ -79,7 +204,6 @@ fun AddTransactionScreen(
                 }
             }
 
-            // If Piggy Bank, only show amount input!
             if (selectedType == TransactionType.PIGGY_BANK) {
                 item {
                     Spacer(modifier = Modifier.height(8.dp))
@@ -113,8 +237,24 @@ fun AddTransactionScreen(
                     }
                 }
             } else {
-                // Need Type Selector (Essential / Discretionary) - only for expenses
                 if (selectedType == TransactionType.EXPENSE) {
+                    item {
+                        Button(
+                            onClick = { showScanOptionsDialog = true },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        ) {
+                            Icon(Icons.Default.PhotoCamera, contentDescription = null, modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(text = stringResource(R.string.scan_receipt), fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    // Need Type Selector (Essential / Discretionary)
                     item {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(
@@ -142,7 +282,7 @@ fun AddTransactionScreen(
                     OutlinedTextField(
                         value = title,
                         onValueChange = { title = it },
-                        label = { Text("Tiêu đề / Mô tả") },
+                        label = { Text(if (selectedType == TransactionType.EXPENSE) "Tiêu đề / Cửa hàng" else "Tiêu đề / Mô tả") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                         shape = RoundedCornerShape(12.dp)
@@ -165,7 +305,7 @@ fun AddTransactionScreen(
                 // Category Selection Header
                 item {
                     Text(
-                        text = "Chọn danh mục",
+                        text = if (selectedType == TransactionType.EXPENSE) "Chọn danh mục (Bắt buộc)" else "Chọn danh mục",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
@@ -199,12 +339,18 @@ fun AddTransactionScreen(
                 // Save Button
                 item {
                     Spacer(modifier = Modifier.height(8.dp))
+                    val parsedAmount = amount.toDoubleOrNull() ?: 0.0
+                    val isFormValid = if (selectedType == TransactionType.EXPENSE) {
+                        selectedCategoryId.isNotBlank() && parsedAmount > 0.0
+                    } else {
+                        title.isNotBlank() && parsedAmount > 0.0
+                    }
+
                     Button(
                         onClick = {
-                            val parsedAmount = amount.toDoubleOrNull() ?: 0.0
-                            if (title.isNotBlank() && parsedAmount > 0.0) {
+                            if (isFormValid) {
                                 viewModel.addTransaction(
-                                    title = title,
+                                    title = title.ifBlank { if (selectedType == TransactionType.EXPENSE) "Chi tiêu" else "Thu nhập" },
                                     amount = parsedAmount,
                                     categoryId = selectedCategoryId.ifBlank { categories.firstOrNull()?.id ?: "1" },
                                     type = selectedType,
@@ -213,6 +359,7 @@ fun AddTransactionScreen(
                                 onBack()
                             }
                         },
+                        enabled = isFormValid,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(50.dp),

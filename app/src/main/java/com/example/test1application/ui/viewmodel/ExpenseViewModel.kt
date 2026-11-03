@@ -1,14 +1,26 @@
 package com.example.test1application.ui.viewmodel
 
+import android.content.Context
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.test1application.data.ExpenseRepository
+import com.example.test1application.data.ocr.ParsedReceipt
+import com.example.test1application.data.ocr.ReceiptScanner
 import com.example.test1application.model.Category
 import com.example.test1application.model.Transaction
 import com.example.test1application.model.TransactionNeedType
 import com.example.test1application.model.TransactionType
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.launch
 import java.util.*
+
+sealed interface ScanUiState {
+    data object Idle : ScanUiState
+    data object Scanning : ScanUiState
+    data class Success(val receipt: ParsedReceipt) : ScanUiState
+    data class Error(val message: String) : ScanUiState
+}
 
 enum class BudgetWarningLevel {
     NORMAL, WARNING_50, ALERT_80, EXCEEDED_100
@@ -22,6 +34,28 @@ data class CategoryBreakdownItem(
 )
 
 class ExpenseViewModel : ViewModel() {
+
+    private val _scanUiState = MutableStateFlow<ScanUiState>(ScanUiState.Idle)
+    val scanUiState: StateFlow<ScanUiState> = _scanUiState.asStateFlow()
+
+    fun onImageSelected(context: Context, uri: Uri) {
+        viewModelScope.launch {
+            _scanUiState.value = ScanUiState.Scanning
+            val result = ReceiptScanner.scan(context, uri)
+            result.fold(
+                onSuccess = { parsed ->
+                    _scanUiState.value = ScanUiState.Success(parsed)
+                },
+                onFailure = { err ->
+                    _scanUiState.value = ScanUiState.Error(err.localizedMessage ?: "Lỗi quét ảnh")
+                }
+            )
+        }
+    }
+
+    fun resetScan() {
+        _scanUiState.value = ScanUiState.Idle
+    }
 
     val transactions: StateFlow<List<Transaction>> = ExpenseRepository.transactions
     val categories: StateFlow<List<Category>> = ExpenseRepository.categories

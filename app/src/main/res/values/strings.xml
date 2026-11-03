@@ -1,3 +1,11 @@
 <resources>
     <string name="app_name">Test 1 Application</string>
+    <string name="scan_receipt">Quét ảnh hóa đơn</string>
+    <string name="take_photo">Chụp ảnh</string>
+    <string name="choose_from_gallery">Chọn từ thư viện</string>
+    <string name="scanning_receipt">Đang quét hóa đơn…</string>
+    <string name="scan_error_title">Không thể quét hóa đơn</string>
+    <string name="retry">Thử lại</string>
+    <string name="manual_entry">Nhập thủ công</string>
+    <string name="camera_permission_rationale">Ứng dụng cần quyền sử dụng camera để chụp ảnh hóa đơn.</string>
 </resources>
