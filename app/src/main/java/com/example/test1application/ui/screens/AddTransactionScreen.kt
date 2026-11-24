@@ -12,6 +12,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -30,7 +31,11 @@ import com.example.test1application.model.TransactionNeedType
 import com.example.test1application.model.TransactionType
 import com.example.test1application.ui.viewmodel.ExpenseViewModel
 import com.example.test1application.ui.viewmodel.ScanUiState
+import com.example.test1application.util.DateUtils
 import java.io.File
+import java.time.LocalDate
+import java.time.LocalTime
+import java.time.ZoneId
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -47,6 +52,12 @@ fun AddTransactionScreen(
     var selectedType by remember { mutableStateOf(TransactionType.EXPENSE) }
     var selectedNeedType by remember { mutableStateOf(TransactionNeedType.ESSENTIAL) }
     var selectedCategoryId by remember { mutableStateOf("") }
+    var selectedDate by remember { mutableStateOf(LocalDate.now()) }
+    var showDatePicker by remember { mutableStateOf(false) }
+
+    // Ghép ngày đã chọn với giờ hiện tại theo múi giờ máy.
+    fun selectedTimestamp(): Long =
+        DateUtils.toTimestamp(selectedDate, LocalTime.now(), ZoneId.systemDefault())
 
     var tempCameraUri by remember { mutableStateOf<Uri?>(null) }
     var showScanOptionsDialog by remember { mutableStateOf(false) }
@@ -120,10 +131,51 @@ fun AddTransactionScreen(
                 if (state.receipt.merchant != null) {
                     title = state.receipt.merchant
                 }
+                val receiptDate = state.receipt.date
+                // Bỏ qua ngày trong tương lai (thường do OCR đọc sai).
+                if (receiptDate != null && !receiptDate.isAfter(LocalDate.now())) {
+                    selectedDate = receiptDate
+                }
                 viewModel.resetScan()
             }
         }
         is ScanUiState.Idle -> {}
+    }
+
+    if (showDatePicker) {
+        val today = LocalDate.now()
+        val datePickerState = rememberDatePickerState(
+            initialSelectedDateMillis = DateUtils.localDateToUtcMillis(selectedDate),
+            selectableDates = object : SelectableDates {
+                override fun isSelectableDate(utcTimeMillis: Long): Boolean =
+                    DateUtils.isSelectableUtcMillis(utcTimeMillis, today)
+
+                override fun isSelectableYear(year: Int): Boolean = year <= today.year
+            }
+        )
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        datePickerState.selectedDateMillis?.let {
+                            selectedDate = DateUtils.utcMillisToLocalDate(it)
+                        }
+                        showDatePicker = false
+                    },
+                    enabled = datePickerState.selectedDateMillis != null
+                ) {
+                    Text("Chọn")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePicker = false }) {
+                    Text("Hủy")
+                }
+            }
+        ) {
+            DatePicker(state = datePickerState)
+        }
     }
 
     if (showScanOptionsDialog) {
@@ -204,6 +256,14 @@ fun AddTransactionScreen(
                 }
             }
 
+            // Transaction date (áp dụng cho cả 3 loại)
+            item {
+                TransactionDateField(
+                    date = selectedDate,
+                    onClick = { showDatePicker = true }
+                )
+            }
+
             if (selectedType == TransactionType.PIGGY_BANK) {
                 item {
                     Spacer(modifier = Modifier.height(8.dp))
@@ -224,7 +284,7 @@ fun AddTransactionScreen(
                         onClick = {
                             val parsedAmount = amount.toDoubleOrNull() ?: 0.0
                             if (parsedAmount > 0.0) {
-                                viewModel.addPiggyBankDeposit(parsedAmount)
+                                viewModel.addPiggyBankDeposit(parsedAmount, selectedTimestamp())
                                 onBack()
                             }
                         },
@@ -354,7 +414,8 @@ fun AddTransactionScreen(
                                     amount = parsedAmount,
                                     categoryId = selectedCategoryId.ifBlank { categories.firstOrNull()?.id ?: "1" },
                                     type = selectedType,
-                                    needType = selectedNeedType
+                                    needType = selectedNeedType,
+                                    timestamp = selectedTimestamp()
                                 )
                                 onBack()
                             }
@@ -369,6 +430,43 @@ fun AddTransactionScreen(
                     }
                     Spacer(modifier = Modifier.height(32.dp))
                 }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TransactionDateField(
+    date: LocalDate,
+    onClick: () -> Unit
+) {
+    OutlinedCard(
+        onClick = onClick,
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Default.CalendarMonth,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary
+            )
+            Column {
+                Text(
+                    text = "Ngày giao dịch",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = DateUtils.formatDisplay(date),
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold
+                )
             }
         }
     }
