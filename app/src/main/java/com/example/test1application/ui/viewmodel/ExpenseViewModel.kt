@@ -78,7 +78,7 @@ class ExpenseViewModel : ViewModel() {
             if (tx.type == TransactionType.PIGGY_BANK) return@filter false
             val cal = Calendar.getInstance().apply { timeInMillis = tx.timestamp }
             cal.get(Calendar.YEAR) == year && cal.get(Calendar.MONTH) == month
-        }
+        }.sortedByDescending { it.timestamp }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val totalIncome: StateFlow<Double> = filteredTransactions.map { list ->
@@ -98,11 +98,12 @@ class ExpenseViewModel : ViewModel() {
         list.filter { it.type == TransactionType.PIGGY_BANK }.sumOf { it.amount }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
 
-    fun addPiggyBankDeposit(amount: Double) {
+    fun addPiggyBankDeposit(amount: Double, timestamp: Long) {
         if (amount <= 0) return
         val tx = Transaction(
             title = "Đút lợn tiết kiệm",
             amount = amount,
+            timestamp = timestamp,
             categoryId = "piggy",
             type = TransactionType.PIGGY_BANK,
             needType = TransactionNeedType.ESSENTIAL
@@ -172,16 +173,27 @@ class ExpenseViewModel : ViewModel() {
         inc - exp
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
 
-    fun addTransaction(title: String, amount: Double, categoryId: String, type: TransactionType, needType: TransactionNeedType) {
+    fun addTransaction(
+        title: String,
+        amount: Double,
+        categoryId: String,
+        type: TransactionType,
+        needType: TransactionNeedType,
+        timestamp: Long
+    ) {
         if (amount <= 0) return
         val tx = Transaction(
             title = title.trim().ifBlank { "Giao dịch" },
             amount = amount,
+            timestamp = timestamp,
             categoryId = categoryId,
             type = type,
             needType = needType
         )
         ExpenseRepository.addTransaction(tx)
+        // Chuyển sang tháng của giao dịch để người dùng thấy ngay giao dịch vừa thêm.
+        val cal = Calendar.getInstance().apply { timeInMillis = timestamp }
+        setSelectedMonthYear(cal.get(Calendar.YEAR), cal.get(Calendar.MONTH))
     }
 
     fun deleteTransaction(id: String) {

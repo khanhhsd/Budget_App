@@ -13,6 +13,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.test1application.data.ExpenseRepository
 import com.example.test1application.ui.screens.AddTransactionScreen
 import com.example.test1application.ui.screens.AnalyticsScreen
 import com.example.test1application.ui.screens.DashboardScreen
@@ -23,6 +24,7 @@ import com.example.test1application.ui.viewmodel.ExpenseViewModel
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        ExpenseRepository.init(applicationContext)
         setContent {
             Test1ApplicationTheme {
                 val viewModel: ExpenseViewModel = viewModel()
